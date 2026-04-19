@@ -2,24 +2,21 @@ import subprocess
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
+import re
 
-# IMPORTANT: Set your ffmpeg bin path here
 FFMPEG_PATH = r"C:\Users\faiz9\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1-full_build\bin"
 
 
 def ask_input_file():
     root = tk.Tk()
     root.withdraw()
-
     file_path = filedialog.askopenfilename(
         title="Select YouTube links file",
         filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")]
     )
-
     if not file_path:
         messagebox.showerror("Error", "No file selected!")
         return None
-
     return file_path
 
 
@@ -34,29 +31,73 @@ def read_links(file_path):
 
 
 def run_command(cmd):
-    process = subprocess.run(cmd)
-    return process.returncode
+    return subprocess.run(cmd).returncode
+
+
+def to_camel_case(text, max_len=15):
+    # keep only ASCII (removes Hindi/non-English)
+    text = text.encode("ascii", errors="ignore").decode()
+
+    # remove symbols
+    text = re.sub(r"[^a-zA-Z0-9\s]", " ", text)
+
+    words = text.split()
+    if not words:
+        return "video"
+
+    camel = words[0].lower() + "".join(w.capitalize() for w in words[1:])
+    camel = camel[:max_len]
+
+    return camel if camel else "video"
+
+
+def rename_new_files(folder: Path, before_set):
+    after_set = set(folder.iterdir())
+    new_files = [f for f in after_set - before_set if f.is_file()]
+
+    for file in new_files:
+        ext = file.suffix
+        name = file.stem
+
+        # remove autonumber prefix: 001_
+        name = re.sub(r"^\d+_", "", name)
+
+        new_name = to_camel_case(name, 15)
+        new_file = folder / (new_name + ext)
+
+        # avoid overwrite
+        counter = 1
+        while new_file.exists():
+            new_file = folder / f"{new_name}_{counter}{ext}"
+            counter += 1
+
+        file.rename(new_file)
 
 
 def download_audio(urls, audio_folder, archive_file):
     print("\n=== Downloading Audio (MP3 Best Quality) ===\n")
+
+    before = set(audio_folder.iterdir())
 
     cmd = [
         "python", "-m", "yt_dlp",
         "--newline",
         "--progress",
         "--download-archive", str(archive_file),
-
         "--ffmpeg-location", FFMPEG_PATH,
+        "--restrict-filenames",
+        "--no-overwrites",
 
         "-x",
         "--audio-format", "mp3",
         "--audio-quality", "0",
 
-        "-o", str(audio_folder / "%(title)s.%(ext)s"),
+        "-o", str(audio_folder / "%(autonumber)03d_%(title)s.%(ext)s"),
     ] + urls
 
     code = run_command(cmd)
+
+    rename_new_files(audio_folder, before)
 
     if code != 0:
         print("\n❌ Audio download failed!")
@@ -67,27 +108,33 @@ def download_audio(urls, audio_folder, archive_file):
 def download_video(urls, video_folder, archive_file):
     print("\n=== Downloading Video (720p MP4 with Audio) ===\n")
 
+    before = set(video_folder.iterdir())
+
     cmd = [
         "python", "-m", "yt_dlp",
         "--newline",
         "--progress",
         "--download-archive", str(archive_file),
-
         "--ffmpeg-location", FFMPEG_PATH,
+        "--restrict-filenames",
+        "--no-overwrites",
 
         "-f", "bv*[height<=720]+ba/b[height<=720]",
         "--merge-output-format", "mp4",
         "--recode-video", "mp4",
 
-        "-o", str(video_folder / "%(title)s.%(ext)s"),
+        "-o", str(video_folder / "%(autonumber)03d_%(title)s.%(ext)s"),
     ] + urls
 
     code = run_command(cmd)
+
+    rename_new_files(video_folder, before)
 
     if code != 0:
         print("\n❌ Video download failed!")
     else:
         print("\n✅ Video download completed successfully.")
+
 
 def main():
     input_file = ask_input_file()
@@ -102,8 +149,6 @@ def main():
         return
 
     base_name = input_path.stem
-
-    # OUTPUT FOLDER will be created where input file is located
     output_root = input_path.parent / f"output_{base_name}"
 
     audio_folder = output_root / "audio"
@@ -123,6 +168,7 @@ def main():
     download_video(links, video_folder, archive_video)
 
     messagebox.showinfo("Done", f"Downloads finished!\nSaved in:\n{output_root}")
+
 
 if __name__ == "__main__":
     main()

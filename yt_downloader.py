@@ -3,6 +3,9 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+# IMPORTANT: Set your ffmpeg bin path here
+FFMPEG_PATH = r"C:\Users\faiz9\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1-full_build\bin"
+
 
 def ask_input_file():
     root = tk.Tk()
@@ -31,7 +34,6 @@ def read_links(file_path):
 
 
 def run_command(cmd):
-    # yt-dlp will show progress automatically
     process = subprocess.run(cmd)
     return process.returncode
 
@@ -44,9 +46,13 @@ def download_audio(urls, audio_folder, archive_file):
         "--newline",
         "--progress",
         "--download-archive", str(archive_file),
+
+        "--ffmpeg-location", FFMPEG_PATH,
+
         "-x",
         "--audio-format", "mp3",
         "--audio-quality", "0",
+
         "-o", str(audio_folder / "%(title)s.%(ext)s"),
     ] + urls
 
@@ -67,16 +73,12 @@ def download_video(urls, video_folder, archive_file):
         "--progress",
         "--download-archive", str(archive_file),
 
-        # pick best video <=720p + best audio
+        "--ffmpeg-location", FFMPEG_PATH,
+
         "-f", "bv*[height<=720]+ba/b[height<=720]",
-
-        # ensure final container is mp4
         "--merge-output-format", "mp4",
+        "--recode-video", "mp4",
 
-        # force ffmpeg usage
-        "--ffmpeg-location", "ffmpeg",
-
-        # output filename
         "-o", str(video_folder / "%(title)s.%(ext)s"),
     ] + urls
 
@@ -86,7 +88,6 @@ def download_video(urls, video_folder, archive_file):
         print("\n❌ Video download failed!")
     else:
         print("\n✅ Video download completed successfully.")
-
 
 def main():
     input_file = ask_input_file()
@@ -101,7 +102,9 @@ def main():
         return
 
     base_name = input_path.stem
-    output_root = Path.cwd() / f"output_{base_name}"
+
+    # OUTPUT FOLDER will be created where input file is located
+    output_root = input_path.parent / f"output_{base_name}"
 
     audio_folder = output_root / "audio"
     video_folder = output_root / "video"
@@ -120,7 +123,6 @@ def main():
     download_video(links, video_folder, archive_video)
 
     messagebox.showinfo("Done", f"Downloads finished!\nSaved in:\n{output_root}")
-
 
 if __name__ == "__main__":
     main()
